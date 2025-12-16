@@ -1,6 +1,6 @@
 # RTR-GS: 3D Gaussian Splatting for Inverse Rendering with Radiance Transfer and Reflection  (MM 2025)
 
-### <p align="center">  [🖨️ArXiv]([RTR-GS](https://arxiv.org/pdf/2507.07733)) | [📰Paper]([RTR-GS](https://dl.acm.org/doi/abs/10.1145/3746027.3755197))</p>
+### <p align="center">  [🖨️ArXiv](https://arxiv.org/pdf/2507.07733) | [📰Paper](https://dl.acm.org/doi/abs/10.1145/3746027.3755197)</p>
 
 <p align="center">
 <a target="_blank">Yongyang Zhou<sup>1</sup></a>, <a target="_blank">Fanglue Zhang<sup>2</sup></a>, <a target="_blank">Zichen Wang<sup>1</sup></a>, <a target="_blank">Lei Zhang<sup>1</sup></a>, </i></sup></a></h5> <br><sup>1</sup>Beijing Institute of Technology <sup>2</sup>Victoria University of Wellington 
