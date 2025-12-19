@@ -63,7 +63,7 @@ python setup.py develop
 
 **## Dataset**
 
-We evaluate our method on [TensoIR-Synthetic](https://zenodo.org/records/7880113#.ZE68FHZBz18), [Shiny Blender Sysnthetic](https://storage.googleapis.com/gresearch/refraw360/ref.zip)，[Shiny Blender Real](https://storage.googleapis.com/gresearch/refraw360/ref_real.zip), and [Stanford ORB]([GitHub - StanfordORB/Stanford-ORB: Official Repository of the Stanford-ORB dataset](https://github.com/StanfordORB/Stanford-ORB))  datasets. We regenerated the Shiny Blender Synthetic dataset from the original Blender files for our relighting tests, keeping the format consistent.
+We evaluate our method on [TensoIR-Synthetic](https://zenodo.org/records/7880113#.ZE68FHZBz18), [Shiny Blender Sysnthetic](https://storage.googleapis.com/gresearch/refraw360/ref.zip)，[Shiny Blender Real](https://storage.googleapis.com/gresearch/refraw360/ref_real.zip), and [Stanford ORB](https://github.com/StanfordORB/Stanford-ORB)  datasets. We regenerated the Shiny Blender Synthetic dataset from the original Blender files for our relighting tests, keeping the format consistent.
 
 
 
