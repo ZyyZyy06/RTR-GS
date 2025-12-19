@@ -69,7 +69,7 @@ We evaluate our method on [TensoIR-Synthetic](https://zenodo.org/records/7880113
 
 ### Running
 
-We run the code in a single NVIDIA GeForce RTX 3090 GPU (24G). We have written corresponding run scripts for different datasets, including training, testing, relighting, and more. For example, if you want to test on the TensoIR dataset, please edit the $root\_dir$  and output_path in $script/run\_synthetic.sh$, and run the following command:
+We run the code in a single NVIDIA GeForce RTX 4090 GPU (24G). We have written corresponding run scripts for different datasets, including training, testing, relighting, and more. For example, if you want to test on the TensoIR dataset, please edit the $root\_dir$  and output_path in $script/run\_synthetic.sh$, and run the following command:
 
 ```sh
 # For TensoIR or ShinyBlender Synthetic
