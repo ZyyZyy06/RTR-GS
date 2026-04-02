@@ -2,7 +2,6 @@
 root_dir=""
 dataset_name="real_scene"
 list="garden bicycle stump room kitchen bonsai counter"
-# list="gardenspheres sedan toycar"
 output_path=""
 gpu_id="0"
 

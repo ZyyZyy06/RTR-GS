@@ -15,7 +15,7 @@ do
         --diffuse_iteration 3000 \
         --ref_map \
         --skip_eval \
-        -t neilf_ref \
+        -t render_ref \
         --compute_with_prt
 
     CUDA_VISIBLE_DEVICES=$gpu_id python baking.py \
@@ -34,7 +34,7 @@ do
         --skip_eval \
         --metallic \
         --ref_map \
-        -t neilf_ref_pbr \
+        -t render_ref_pbr \
         --compute_with_prt
 
     CUDA_VISIBLE_DEVICES=$gpu_id python render_and_eval.py \
@@ -44,7 +44,7 @@ do
         --ref_map \
         --compute_with_prt \
         --metallic \
-        -t neilf_ref_pbr \
+        -t render_ref_pbr \
         --save_video
 
 
@@ -56,6 +56,6 @@ do
         --relight \
         --compute_with_prt \
         --metallic \
-        -t neilf_ref_pbr \
+        -t render_ref_pbr \
         --save_video    
 done

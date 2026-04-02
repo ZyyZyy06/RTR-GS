@@ -1,5 +1,6 @@
 import os
-
+import json
+import cv2
 import imageio
 from gaussian_renderer import render_fn_dict
 import numpy as np
@@ -21,6 +22,7 @@ from scene.utils import load_img_rgb
 import warnings
 from utils.graphics_utils import read_hdr, latlong_to_cubemap
 from utils.general_utils import load_json_config
+from utils.sh_utils import eval_sh
 
 
 warnings.filterwarnings("ignore")
@@ -40,6 +42,7 @@ if __name__ == '__main__':
     parser.add_argument("--occlusion_path", type=str, default=None)
     parser.add_argument("--no_rescale_albedo", action="store_true")
     parser.add_argument("--skip_save_image", action="store_true", default=False)
+    parser.add_argument("--skip_eval", action='store_true', default=False)
     parser.add_argument("--save_name", type=str, default="test_rli")
     parser.add_argument("--save_video", action='store_true', default=False)
 
@@ -76,8 +79,30 @@ if __name__ == '__main__':
         aabb = torch.tensor([-bound, -bound, -bound, bound, bound, bound]).cuda()
         brdf_lut = get_brdf_lut().cuda()
 
+        train_cubemap = CubemapLight(base_res=128).cuda()
+        cubemap_checkpoint = os.path.dirname(args.checkpoint) + "/cubemap_" + os.path.basename(args.checkpoint)
+        if os.path.exists(cubemap_checkpoint):
+            train_cubemap.create_from_ckpt(cubemap_checkpoint, restore_optimizer=True)
+            print("Successfully loaded!")
+        else:
+            NotImplementedError("No checkpoint or loaded iteration found")
+        train_cubemap.build_mips()
+        if pipe.transfer_light:
+            train_cubemap.build_sh(3)
+            gaussians.incident_to_transfer(train_cubemap.shs)
+
     else:
         raise NotImplementedError
+    
+    editing_name = "default_edit"
+    if pipe.editing_config_path != "":
+        if os.path.exists(pipe.editing_config_path):
+            with open(pipe.editing_config_path) as json_file:
+                editing_config = json.load(json_file)
+                editing_name = editing_config["name"]
+                gaussians.editing_materials(editing_config["configs"])
+        else:
+            NotImplementedError("No editing config found")
         
     # deal with each item
     test_transforms_file = os.path.join(args.source_path, "transforms_test.json")
@@ -120,9 +145,13 @@ if __name__ == '__main__':
     background = torch.tensor([bg, bg, bg], dtype=torch.float32, device="cuda")
     render_fn = render_fn_dict[args.type]
     
-
-    results_dir = os.path.join(args.model_path, args.save_name)
+    if pipe.editing_config_path != "":
+        save_name = args.save_name + "/" + editing_name
+    else:
+        save_name = args.save_name
+    results_dir = os.path.join(args.model_path, save_name)
     task_names = ['bridge', 'city', 'fireplace', 'forest', 'night']
+    # task_names = ['night']
     for task_name in task_names:
         task_dir = os.path.join(results_dir, task_name)
         os.makedirs(task_dir, exist_ok=True)
@@ -136,6 +165,19 @@ if __name__ == '__main__':
         cubemap.base.data = latlong_to_cubemap(hdri, [res, res])
         cubemap.build_mips()
         cubemap.eval()
+
+        origin_rgbs = cubemap.build_sh(3)
+
+        # gaussians.incident_to_transfer(cubemap.shs)
+
+        # evalsh并导出图像
+        # sh_rgbs = eval_sh(3, cubemap.shs, cubemap.get_envmap_dirs())
+        # torchvision.utils.save_image(sh_rgbs.permute(0,1,2), "test_sh_rgb.png")
+        # torchvision.utils.save_image(origin_rgbs.permute(2, 0, 1).clamp(min=0.0, max=1.0), "gt_rgb.png")
+        # torchvision.utils.save_image(sh_rgbs.permute(2, 0, 1).clamp(min=0.0, max=1.0), "sh_rgb.png")
+        
+
+
         env_image = cubemap.export_envmap(return_img=True).permute(2, 0, 1).clamp(min=0.0, max=1.0)
         envmap_path = os.path.join(args.model_path, 'test_rli', 'envmap.png')
 
@@ -185,14 +227,13 @@ if __name__ == '__main__':
 
 
         os.makedirs(os.path.join(task_dir, "gt"), exist_ok=True)
-        # os.makedirs(os.path.join(task_dir, "gt_albedo"), exist_ok=True)
-        # os.makedirs(os.path.join(task_dir, "gt_pbr_env"), exist_ok=True)
         envname = os.path.splitext(os.path.basename(task_dict[task_name]["envmap_path"]))[0]
 
+        
         if not args.no_rescale_albedo:
+            albedo_gt_exist = True
             gt_albedo_list = []
             reconstructed_albedo_list = []
-            albedo_gt_exist = True
             gaussians.base_color_scale = torch.tensor([1.0, 1.0, 1.0], dtype=torch.float32, device="cuda")
             for idx, frame in enumerate(tqdm(frames, leave=False)):
                 image_path = os.path.join(args.source_path, frame["file_path"] + "_" + envname + ".png")
@@ -212,7 +253,6 @@ if __name__ == '__main__':
                     # albedo_rgba[..., 0:3] = srgb_to_rgb(albedo_rgba[..., 0:3])
                     mask = albedo_rgba[..., 3] > 0
                     gt_albedo = torch.from_numpy(albedo_rgba[..., :3]).float().cuda()
-
                     gt_albedo_list.append(gt_albedo[mask])
 
 
@@ -232,7 +272,8 @@ if __name__ == '__main__':
                     reconstructed_albedo_list.append(render_albedo[mask])
                 else:
                     albedo_gt_exist = False
-                    video_dict["gt_albedo"] = None
+                    break
+                    
 
                     
             if albedo_gt_exist:
@@ -245,8 +286,12 @@ if __name__ == '__main__':
                 gaussians.base_color_scale = torch.tensor([1.0, 1.0, 1.0], dtype=torch.float32, device="cuda")
                 print("Albedo scale:", torch.tensor([1.0, 1.0, 1.0], dtype=torch.float32, device="cuda"))
         else:
+            albedo_gt_exist = False
             gaussians.base_color_scale = torch.tensor([1.0, 1.0, 1.0], dtype=torch.float32, device="cuda")
             print("Albedo scale:", torch.tensor([1.0, 1.0, 1.0], dtype=torch.float32, device="cuda"))
+
+        if not albedo_gt_exist:
+            video_dict["gt_albedo"] = None
 
         
         
@@ -307,7 +352,7 @@ if __name__ == '__main__':
                 if os.path.exists(albedo_path):
                     video_gt_albedo = torch.clamp(gt_albedo, 0.0, 1.0).permute(1,2,0).detach().cpu()
                     video_gt_albedo = (video_gt_albedo.numpy() * 255).astype('uint8')
-                    video_dict['gt_albedo'].append(video_gt_albedo)
+                    video_dict["gt_albedo"].append(video_gt_albedo)
 
                 for capture_type in capture_list:
                     if capture_type == "normal":
@@ -333,18 +378,18 @@ if __name__ == '__main__':
 
 
 
+            if not args.skip_eval:
+                with torch.no_grad():
+                    psnr_pbr += psnr(render_pkg['pbr'], gt_image).mean().double()
+                    ssim_pbr += ssim(render_pkg['pbr'], gt_image).mean().double()
+                    lpips_pbr += LPIPS(render_pkg['pbr'], gt_image).mean().double()
 
-            with torch.no_grad():
-                psnr_pbr += psnr(render_pkg['pbr'], gt_image).mean().double()
-                ssim_pbr += ssim(render_pkg['pbr'], gt_image).mean().double()
-                lpips_pbr += LPIPS(render_pkg['pbr'], gt_image).mean().double()
+                    if os.path.exists(albedo_path):
+                        psnr_albedo += psnr(render_pkg['base_color'], gt_albedo).mean().double()
+                        ssim_albedo += ssim(render_pkg['base_color'], gt_albedo).mean().double()
+                        lpips_albedo += LPIPS(render_pkg['base_color'], gt_albedo).mean().double()
 
-                if os.path.exists(albedo_path):
-                    psnr_albedo += psnr(render_pkg['base_color'], gt_albedo).mean().double()
-                    ssim_albedo += ssim(render_pkg['base_color'], gt_albedo).mean().double()
-                    lpips_albedo += LPIPS(render_pkg['base_color'], gt_albedo).mean().double()
-
-                # mse_roughness += ((render_pkg['roughness'] - gt_roughness)**2).mean().double()
+                    # mse_roughness += ((render_pkg['roughness'] - gt_roughness)**2).mean().double()
             
 
 

@@ -67,12 +67,14 @@ class PipelineParams(ParamGroup):
         self.debug = False
         self.save_training_vis = False
         self.compute_with_prt = False
-        self.deferred_shading = False
+        self.forward_shading = False
         self.diffuse_iteration = 0
         self.tone_mapping = True
         self.metallic = False
         self.ref_map = False
         self.relight = False
+        self.transfer_light = False
+        self.editing_config_path = ""
         super().__init__(parser, "Pipeline Parameters")
 
 

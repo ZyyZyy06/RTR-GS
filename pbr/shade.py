@@ -157,6 +157,49 @@ def GGX_specular(
     return spec
 
 
+def get_reflectance_color_forward(
+        light: CubemapLight,
+        normals: torch.Tensor,  # [..., 3]
+        view_dirs: torch.Tensor,  # [..., 3]
+        roughness: torch.Tensor,  # [..., 1]
+        specular_color: torch.Tensor,  # ..., 3]
+        brdf_lut: Optional[torch.Tensor] = None,
+):
+    H = 1
+    W = normals.shape[0]
+    normals = normals.reshape(1, H, W, 3)
+    view_dirs = view_dirs.reshape(1, H, W, 3)
+    spec_col = specular_color.reshape(1, H, W, 3)
+    roughness = roughness.reshape(1, H, W, 1)
+
+
+    ref_dirs = (
+        2.0 * (normals * view_dirs).sum(-1, keepdims=True).clamp(min=0.0) * normals - view_dirs
+    )  # [1, H, W, 3]
+
+    NoV = saturate_dot(normals, view_dirs)  # [1, H, W, 1]
+    fg_uv = torch.cat((NoV, roughness), dim=-1)  # [1, H, W, 2]
+    fg_lookup = dr.texture(
+        brdf_lut,  # [1, 256, 256, 2]
+        fg_uv.contiguous(),  # [1, H, W, 2]
+        filter_mode="linear",
+        boundary_mode="clamp",
+    )  # [1, H, W, 2]
+
+    miplevel = light.get_mip(roughness)  # [1, H, W, 1]
+    spec = dr.texture(
+        light.specular[0][None, ...],  # [1, 6, env_res, env_res, 3]
+        ref_dirs.contiguous(),  # [1, H, W, 3]
+        mip=list(m[None, ...] for m in light.specular[1:]),
+        mip_level_bias=miplevel[..., 0],  # [1, H, W]
+        filter_mode="linear-mipmap-linear",
+        boundary_mode="cube",
+    )  # [1, H, W, 3]
+    reflectance = spec_col * fg_lookup[..., 0:1] + fg_lookup[..., 1:2]  # [1, H, W, 3]
+    specular_rgb = spec * reflectance  # [1, H, W, 3]
+
+    return specular_rgb.squeeze().reshape(-1, 3)
+
 
 def get_reflectance_color(
         light: CubemapLight,

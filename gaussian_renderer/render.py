@@ -2,7 +2,7 @@ import math
 import torch
 import torch.nn.functional as F
 from arguments import OptimizationParams
-from pbr.shade import get_reflectance_color, pbr_shading
+from pbr.shade import get_reflectance_color, get_reflectance_color_forward, pbr_shading
 from scene.gaussian_model import GaussianModel
 from scene.cameras import Camera
 from utils.prt_utils import PRTutils
@@ -127,8 +127,22 @@ def render_view(viewpoint_camera: Camera, pc: GaussianModel, pipe, bg_color: tor
         colors_precomp = override_color
 
 
+    canonical_rays = dict_params["canonical_rays"]
+    c2w = viewpoint_camera.c2w
+    H, W = viewpoint_camera.image_height, viewpoint_camera.image_width
 
     features = torch.cat([depths, depths2, normal, ref_tint, ref_roughness, ref_strength], dim=-1) # [1, 1, 3, 3, 1, 1]
+
+    viewdirs = F.normalize(viewpoint_camera.camera_center - means3D, dim=-1)
+
+    if pipe.forward_shading:
+        view_dirs = F.normalize(viewpoint_camera.camera_center.repeat(means3D.shape[0], 1) - means3D, dim=-1)
+        refl_color_forward =  get_reflectance_color_forward(refmap, normal, view_dirs, ref_roughness, ref_tint, brdf_lut=dict_params["brdf_lut"])
+        ref_rgb = (1.0 - ref_strength) * colors_precomp + ref_strength * refl_color_forward
+        colors_precomp = ref_rgb
+
+
+
     
     if pc.use_pbr:
         base_color = pc.get_base_color
@@ -150,12 +164,20 @@ def render_view(viewpoint_camera: Camera, pc: GaussianModel, pipe, bg_color: tor
         # base_color[:, 2] = b_channel
         # end
 
+        if not pipe.relight:
+            incidents = pc.get_incidents  # incident shs
+            incidents_light = torch.clamp(eval_sh(pc.active_sh_degree, incidents.transpose(1, 2).view(-1, 3, (pc.max_sh_degree + 1) ** 2), normal), 0.0, 1.0)
+        else:
+            if pipe.transfer_light:
+                transfer_shs = pc.get_incidents.permute(0, 2, 1)
+                light_shs = cubemap.shs
+                incidents = light_shs * transfer_shs
+                incidents = incidents.permute(0, 2, 1)
+                incidents_light = torch.clamp(eval_sh(pc.active_sh_degree, incidents.transpose(1, 2).view(-1, 3, (pc.max_sh_degree + 1) ** 2), normal), 0.0, 1.0)
+            else:
+                incidents_light = torch.zeros_like(base_color)
 
-        incidents = pc.get_incidents  # incident shs
-        viewdirs = F.normalize(viewpoint_camera.camera_center - means3D, dim=-1)
-        incidents_light = torch.clamp(eval_sh(pc.active_sh_degree, incidents.transpose(1, 2).view(-1, 3, (pc.max_sh_degree + 1) ** 2), normal), 0.0, 1.0)
-
-        features = torch.cat([features, base_color, roughness, metallic, incidents_light], dim=-1) # [1, 1, 3, 3, 1, 1, 3, 1, 1, 3]
+        features = torch.cat([features, base_color, roughness, metallic, incidents_light], dim=-1) # [..., 3, 1, 1, 3]
 
 
     # Rasterize visible Gaussians to image, obtain their radii (on screen).
@@ -177,11 +199,18 @@ def render_view(viewpoint_camera: Camera, pc: GaussianModel, pipe, bg_color: tor
     rendered_feature = rendered_feature / rendered_opacity.clamp_min(1e-5) * mask   #[N, H, W]
     feature_size = rendered_feature.shape[0]
 
+    render_depth_expected = rendered_depth
+    render_depth_expected = (render_depth_expected / rendered_opacity)
+    render_depth_expected = torch.nan_to_num(render_depth_expected, 0, 0)
+    surf_depth = render_depth_expected
 
 
     rendered_depth, rendered_depth2, rendered_normal, rendered_ref_tint, rendered_ref_roughness, rendered_ref_strength_map, rendered_feature_rest \
         = rendered_feature.split([1, 1, 3, 3, 1, 1, feature_size - 10], dim=0)
+
+    cur_feature_len = 0
     if pc.use_pbr:
+        cur_feature_len = cur_feature_len + 10
         rendered_base_color, rendered_roughness, rendered_metallic, rendered_incident_lights, rendered_feature_rest_2 \
             = rendered_feature_rest.split([3, 1, 1, 3, feature_size - 18], dim=0)
 
@@ -200,23 +229,22 @@ def render_view(viewpoint_camera: Camera, pc: GaussianModel, pipe, bg_color: tor
     normal_map = F.normalize(normal_map, dim=-1)
     radiance_map = rendered_image.permute(1, 2, 0)                                          # [H, W, 3]
 
-
-    canonical_rays = dict_params["canonical_rays"]
-    c2w = viewpoint_camera.c2w
-    H, W = viewpoint_camera.image_height, viewpoint_camera.image_width
-
     view_dirs = -(
             (F.normalize(canonical_rays[:, None, :], p=2, dim=-1) * c2w[None, :3, :3])  # [HW, 3, 3]
             .sum(dim=-1)
             .reshape(H, W, 3)
         )  # [H, W, 3]
     
-
-    refl_color =  get_reflectance_color(refmap, normal_map, view_dirs, ref_roughness_map, ref_tint_map, brdf_lut=dict_params["brdf_lut"])
+    if not pipe.forward_shading:
+        refl_color = get_reflectance_color(refmap, normal_map, view_dirs, ref_roughness_map, ref_tint_map, brdf_lut=dict_params["brdf_lut"])
+        ref_rgb = (1.0 - ref_strength_map) * radiance_map + ref_strength_map * refl_color
+        ref_rgb = ref_rgb * opacity_map + (1.0 - opacity_map) * bg_color
+    else:
+        refl_color = radiance_map
+        ref_rgb = radiance_map * opacity_map + (1.0 - opacity_map) * bg_color
     
 
-    ref_rgb = (1.0 - ref_strength_map) * radiance_map + ref_strength_map * refl_color
-    ref_rgb = ref_rgb * opacity_map + (1.0 - opacity_map) * bg_color
+
 
     out_feature_dict = {}
     out_feature_dict.update({
@@ -269,7 +297,8 @@ def render_view(viewpoint_camera: Camera, pc: GaussianModel, pipe, bg_color: tor
             roughness = roughness_map,  # [H, W, 1]
             metallic = metallic_map if pipe.metallic else None,    # [H, W, 1]
             occlusion = occlusion_map if occlusion_map is not None else None,  # [H, W, 1]
-            irradiance = incident_light_map if not pipe.relight else None,     # [H, W, 3]
+            irradiance = incident_light_map if not pipe.relight or (pipe.relight and pipe.transfer_light) else None,     # [H, W, 3]
+            # irradiance = incident_light_map,     # [H, W, 3]
             brdf_lut=dict_params["brdf_lut"],
         )
 
@@ -306,6 +335,7 @@ def render_view(viewpoint_camera: Camera, pc: GaussianModel, pipe, bg_color: tor
         blended_ref_color = ref_strength_map * refl_color
         depth_map = (depth_map - depth_map.min()) / (depth_map.max() - depth_map.min())
         vis_dict.update({
+                "surf_depth": surf_depth,
                 "depth": depth_map.permute(2, 0, 1),
                 "normal": (normal_map.permute(2, 0, 1) * 0.5 + 0.5),
                 "pseudo_normal" : rendered_pseudo_normal * 0.5 + 0.5,
@@ -342,7 +372,7 @@ def render_view(viewpoint_camera: Camera, pc: GaussianModel, pipe, bg_color: tor
                 "env_export_diffuse": cubemap.export_envmap(return_img=True, base=False).permute(2, 0, 1),
             })
 
-        without_opacity_mask_keys = ["env_export_base", "env_export_diffuse", "ref_export_base"] 
+        without_opacity_mask_keys = ["env_export_base", "env_export_diffuse", "ref_export_base", "surf_depth"] 
         for key in vis_dict.keys():
             if key not in without_opacity_mask_keys:
 

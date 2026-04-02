@@ -1,6 +1,6 @@
 # RTR-GS: 3D Gaussian Splatting for Inverse Rendering with Radiance Transfer and Reflection  (MM 2025)
 
-### <p align="center">  [🖨️ArXiv](https://arxiv.org/pdf/2507.07733) | [📰Paper](https://dl.acm.org/doi/abs/10.1145/3746027.3755197)</p>
+### <p align="center">  [🖨️ArXiv]([](https://arxiv.org/pdf/2507.07733)) | [📰Paper]([](https://dl.acm.org/doi/abs/10.1145/3746027.3755197))</p>
 
 <p align="center">
 <a target="_blank">Yongyang Zhou<sup>1</sup></a>, <a target="_blank">Fanglue Zhang<sup>2</sup></a>, <a target="_blank">Zichen Wang<sup>1</sup></a>, <a target="_blank">Lei Zhang<sup>1</sup></a>, </i></sup></a></h5> <br><sup>1</sup>Beijing Institute of Technology <sup>2</sup>Victoria University of Wellington 
@@ -63,19 +63,17 @@ python setup.py develop
 
 **## Dataset**
 
-We evaluate our method on [TensoIR-Synthetic](https://zenodo.org/records/7880113#.ZE68FHZBz18), [Shiny Blender Sysnthetic](https://storage.googleapis.com/gresearch/refraw360/ref.zip)，[Shiny Blender Real](https://storage.googleapis.com/gresearch/refraw360/ref_real.zip), and [Stanford ORB](https://github.com/StanfordORB/Stanford-ORB)  datasets. We regenerated the Shiny Blender Synthetic dataset from the original Blender files for our relighting tests, keeping the format consistent.
+We evaluate our method on [TensoIR-Synthetic](https://zenodo.org/records/7880113#.ZE68FHZBz18), [Shiny Blender Sysnthetic](https://storage.googleapis.com/gresearch/refraw360/ref.zip)，[Shiny Blender Real](https://storage.googleapis.com/gresearch/refraw360/ref_real.zip), and [Stanford ORB]([GitHub - StanfordORB/Stanford-ORB: Official Repository of the Stanford-ORB dataset](https://github.com/StanfordORB/Stanford-ORB))  datasets. We regenerated the Shiny Blender Synthetic dataset from the original Blender files for our relighting tests, keeping the format consistent.
 
 
 
 ### Running
 
-We run the code in a single NVIDIA GeForce RTX 4090 GPU (24G). We have written corresponding run scripts for different datasets, including training, testing, relighting, and more. For example, if you want to test on the TensoIR dataset, please edit the $root\_dir$  and output_path in $script/run\_synthetic.sh$, and run the following command:
+We run the code in a single NVIDIA GeForce RTX 3090 GPU (24G). We have written corresponding run scripts for different datasets, including training, testing, relighting, and more. For example, if you want to test on the TensoIR dataset, please edit the $root\_dir$  and output_path in $script/run\_synthetic.sh$, and run the following command:
 
 ```sh
 # For TensoIR or ShinyBlender Synthetic
 sh script/run_synthetic.sh
-# For StanfordORB
-sh script/run_orb.sh
 # For Mipnerf360 or Shiny Blender Real
 sh script/run_real_scene.sh
 ```

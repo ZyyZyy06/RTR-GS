@@ -116,33 +116,32 @@ class CubemapLight(nn.Module):
             - 2,
         )
 
-    def build_sh(self, degree: int = 1):
-
-        num = 100
-        sx = torch.rand(num)
-        sy = torch.rand(num)
-        # phi = torch.arccos(1.0 - 2 * sx) - np.pi / 2.0
-        # theta = 2 * np.pi * sy - np.pi
-        theta = (2.0 * torch.acos(torch.sqrt(1.0 - sx))).cuda()
-        phi = (2.0 * torch.pi * sy).cuda()
-
-        dirs = torch.stack([ torch.sin(theta) * torch.cos(phi), 
-                torch.sin(theta) * torch.sin(phi), 
-                torch.cos(theta)], dim=-1).view(-1, 3)
+    def build_sh(self, degree: int = 3):
+        res = [512, 1024]
+        lat_step_size = np.pi / res[0]
+        lng_step_size = 2 * np.pi / res[1]
+        phi, theta = torch.meshgrid([torch.linspace(np.pi / 2 - 0.5 * lat_step_size, -np.pi / 2 + 0.5 * lat_step_size, res[0],device="cuda"), 
+                                    torch.linspace(np.pi - 0.5 * lng_step_size, -np.pi + 0.5 * lng_step_size, res[1],device="cuda"  )], indexing='ij')
 
 
-        rgbs = dr.texture(
-                self.base[None, ...],
-                dirs[None,None,...].contiguous(),
-                filter_mode="linear",
-                boundary_mode="cube",
-            )[
-                0
-            ]  # [H, W, 3]
-        self.shs = eval_sh_basis(degree, dirs, rgbs)
-
-
+        reflvec = torch.stack([  torch.cos(theta) * torch.cos(phi), 
+                                torch.sin(theta) * torch.cos(phi), 
+                                torch.sin(phi)], dim=-1).view(res[0], res[1], 3)    # [envH, envW, 3]
         
+        color = dr.texture(
+            self.base[None, ...],
+            reflvec[None, ...].contiguous(),
+            filter_mode="linear",
+            boundary_mode="cube",
+        )[
+            0
+        ]  # [H, W, 3]
+        self.shs = eval_sh_basis(degree, reflvec, color).permute(0, 2, 1)
+
+        return color
+
+
+    
     
     def build_mips(self, cutoff: float = 0.99) -> None:
         self.specular = [self.base]

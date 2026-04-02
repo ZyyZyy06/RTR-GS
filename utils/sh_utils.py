@@ -68,6 +68,8 @@ def rotation_between_z(vec):
     return R
 
 
+
+
 def eval_sh(deg, sh, dirs):
     """
     Evaluate spherical harmonics at unit directions
@@ -129,25 +131,34 @@ def eval_sh(deg, sh, dirs):
 
 
 def eval_sh_basis(deg, dirs, rgbs):
+    """
+    【修复版】将方向对应的颜色值拟合为球谐系数
+    Args:
+        deg: 球谐阶数 (0-4)
+        dirs: 单位方向向量 [N, 3]
+        rgbs: 对应方向的颜色 [N, 3]
+    Returns:
+        coefs: 球谐系数 [1, (deg+1)^2, 3]
+    """
     assert 4 >= deg >= 0
 
+    # 维度展平
     dirs = dirs.view(-1, 3)
     rgbs = rgbs.view(-1, 3)
-
     n_dirs = dirs.shape[0]
     n_coefs = (deg + 1) ** 2
 
+    # 计算球谐基 [N, n_coefs]
     basis = eval_sh_coef(deg, dirs)
-    coefs = torch.zeros((n_coefs, 3), device=rgbs.device)
-
-
-    for i in range(n_dirs):
-        for j in range(n_coefs):
-            coefs[j] = coefs[j] + basis[i,j] * rgbs[i]
-
-    for j in range(n_coefs):
-        coefs[j] = (4 * torch.pi * coefs[j]) / n_dirs
     
+    # ✅ 矩阵运算替代双重for循环（高效）
+    # 基矩阵转置 @ 颜色矩阵 = [n_coefs, 3]
+    coefs = basis.T @ rgbs
+    
+    # ✅ 正确归一化：除以总采样数（删除错误的4*π）
+    coefs = coefs / n_dirs
+
+    # 输出维度适配 [1, (deg+1)^2, 3]
     return coefs.unsqueeze(0)
 
 
@@ -290,3 +301,6 @@ def RGB2SH(rgb):
 
 def SH2RGB(sh):
     return sh * C0 + 0.5
+
+
+

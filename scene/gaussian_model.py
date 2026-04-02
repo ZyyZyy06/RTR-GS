@@ -46,7 +46,7 @@ class GaussianModel:
 
     def __init__(self, sh_degree: int, render_type='render'):
         self.render_type = render_type
-        self.use_pbr = render_type in ['neilf_ref_pbr', 'neilf_ref_fast']
+        self.use_pbr = render_type in ['render_ref_pbr', 'render_fast']
         self.active_sh_degree = 0
         self.max_sh_degree = sh_degree
         self._xyz = torch.empty(0)
@@ -381,12 +381,13 @@ class GaussianModel:
 
         if self.use_pbr:
             if len(model_args) > 21:
+                print(len(model_args))
                 (self._base_color,
                  self._roughness,
                  self._metallic,
                  self._incidents_dc,
                  self._incidents_rest,
-                 ) = model_args[21:]
+                 ) = model_args[21:26]
             else:
 
                 base_color = torch.ones_like(self._xyz)
@@ -1126,4 +1127,65 @@ class GaussianModel:
                                                              keepdim=True)
         self.denom[update_filter] += 1
 
-    
+
+    def incident_to_transfer(self, light_shs):
+        out_shs = self.get_incidents.permute(0,2,1)
+        transfer_shs = out_shs / (light_shs)
+        transfer_shs = transfer_shs.permute(0, 2, 1)
+        self._incidents_dc = transfer_shs[:, :1, :]
+        self._incidents_rest = transfer_shs[:, 1:, :]
+
+
+
+    def editing_materials(self, editing_config : list):
+        temp_dicts = []
+        for editing_item in editing_config:
+            
+            condition = editing_item["condition"] if "condition" in editing_item.keys() else editing_item["target"] 
+            target = editing_item["target"]
+            assert target in ["albedo", "metallic", "roughness"]
+            assert condition in ["albedo", "metallic", "roughness"]
+            
+            if target == "albedo":
+                attributes = self.get_base_color
+            elif target == "metallic":
+                attributes = self.get_metallic
+            elif target == "roughness":
+                attributes = self.get_roughness
+
+            if condition == "albedo":
+                condition_attributes = self.get_base_color
+            elif condition == "metallic":
+                condition_attributes = self.get_metallic
+            elif condition == "roughness":
+                condition_attributes = self.get_roughness
+
+
+            postive_limit = torch.clamp(torch.tensor(editing_item["postive_range"], device=attributes.device), 0.0, 1.0)
+            negtive_limit = torch.clamp(torch.tensor(editing_item["negtive_range"], device=attributes.device), 0.0, 1.0)
+
+            mask = (condition_attributes < postive_limit) & (condition_attributes > negtive_limit)
+            # 关键修改：只保留 三个通道全都满足条件 的像素
+            # 1. 对dim=1做all()，mask变成 [N] （像素级：True=整个像素RGB都符合）
+            pixel_mask = mask.all(dim=1)
+            # 2. 扩展回 [N,3]，让整个像素的RGB一起被修改
+            mask = pixel_mask.unsqueeze(1).expand_as(attributes)
+            if editing_item["method"] == "set":
+                attributes[mask] =  torch.clamp(torch.zeros_like(attributes) + torch.tensor(editing_item["value"], device=attributes.device), 0.0, 1.0)[mask]
+            elif editing_item["method"] == "add":
+                attributes[mask] = torch.clamp(attributes + torch.tensor(editing_item["value"], device=attributes.device), 0.0, 1.0)[mask]
+            elif editing_item["method"] == "mul":
+                attributes[mask] = torch.clamp(attributes * torch.tensor(editing_item["value"], device=attributes.device), 0.0, 1.0)[mask]
+            temp_dicts.append([editing_item["target"], mask, attributes])
+            
+        
+        for temp_item in temp_dicts:
+            attribute_name = temp_item[0]
+            mask = temp_item[1]
+            assert attribute_name in ["albedo", "metallic", "roughness"]
+            if attribute_name == "albedo":
+                self._base_color.data[mask] = inverse_sigmoid(temp_item[2] / self.base_color_scale[None, :])[mask]
+            elif attribute_name == "metallic":
+                self._metallic.data[mask] = inverse_sigmoid(temp_item[2])[mask]
+            elif attribute_name == "roughness":
+                self._roughness.data[mask] = inverse_sigmoid(temp_item[2])[mask]

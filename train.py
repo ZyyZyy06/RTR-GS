@@ -82,6 +82,7 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe: PipelineParams
         brdf_lut = get_brdf_lut().cuda()
         pbr_kwargs["brdf_lut"] = brdf_lut
 
+
     if is_pbr:
         if args.occlusion_path is not None:
             occlusion_volumes = torch.load(args.occlusion_path)
@@ -252,6 +253,10 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe: PipelineParams
                         pass
 
                     print("[ITER {}] Saving {} Checkpoint".format(iteration, com_name))
+
+    if is_pbr:
+        cubemap.build_sh(3)
+        gaussians.incident_to_transfer(cubemap.shs)
 
     end_time = time.time()
     with open(os.path.join(args.model_path, "trainint_time.txt"), "w") as f:
@@ -490,7 +495,7 @@ if __name__ == "__main__":
 
     torch.autograd.set_detect_anomaly(args.detect_anomaly)
 
-    is_pbr = args.type in ['neilf_ref_pbr']
+    is_pbr = args.type in ['render_ref_pbr', 'render_ref_fast']
     training(lp.extract(args), op.extract(args), pp.extract(args), is_pbr=is_pbr)
 
     # All done
