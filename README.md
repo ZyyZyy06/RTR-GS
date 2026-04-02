@@ -57,8 +57,6 @@ pip install ./submodules/diff-gaussian-rasterization
 # or
 cd ./submodules/diff-gaussian-rasterization
 python setup.py develop
-
-
 ```
 
 **## Dataset**
